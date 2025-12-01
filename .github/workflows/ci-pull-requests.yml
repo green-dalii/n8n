@@ -123,19 +123,31 @@ jobs:
     with:
       ref: refs/pull/${{ github.event.pull_request.number }}/merge
 
+  docker-build:
+    name: Build CI Docker Image
+    needs: install-and-build
+    if: needs.install-and-build.outputs.non_python_changed == 'true'
+    uses: ./.github/workflows/docker-build-push.yml
+    with:
+      n8n_version: pr-${{ github.event.pull_request.number }}
+      release_type: branch
+      push_enabled: true
+    secrets: inherit
+
   e2e-test:
     name: E2E Tests
-    needs: [install-and-build, unit-test, typecheck, lint]
+    needs: [install-and-build, unit-test, typecheck, lint, docker-build]
     if: |
       always() &&
       needs.install-and-build.result == 'success' &&
       needs.unit-test.result != 'failure' &&
       needs.typecheck.result != 'failure' &&
-      needs.lint.result != 'failure'
+      needs.lint.result != 'failure' &&
+      needs.docker-build.result == 'success'
     uses: ./.github/workflows/playwright-test-reusable.yml
     with:
       test-mode: 'docker-pull'
-      docker-image: 'n8nio/n8n:nightly'
+      docker-image: ${{ needs.docker-build.outputs.image_ref }}
       test-command: 'pnpm --filter=n8n-playwright test:container:multi-main:ui'
       runner: 'blacksmith-4vcpu-ubuntu-2204'
       shards: '[1, 2, 3, 4, 5, 6, 7]'
@@ -144,17 +156,18 @@ jobs:
 
   e2e-test-isolated:
     name: E2E Tests (Isolated)
-    needs: [install-and-build, unit-test, typecheck, lint]
+    needs: [install-and-build, unit-test, typecheck, lint, docker-build]
     if: |
       always() &&
       needs.install-and-build.result == 'success' &&
       needs.unit-test.result != 'failure' &&
       needs.typecheck.result != 'failure' &&
-      needs.lint.result != 'failure'
+      needs.lint.result != 'failure' &&
+      needs.docker-build.result == 'success'
     uses: ./.github/workflows/playwright-test-reusable.yml
     with:
       test-mode: 'docker-pull'
-      docker-image: 'n8nio/n8n:nightly'
+      docker-image: ${{ needs.docker-build.outputs.image_ref }}
       test-command: 'pnpm --filter=n8n-playwright test:container:multi-main:isolated'
       runner: 'blacksmith-4vcpu-ubuntu-2204'
       shards: '[1]'
